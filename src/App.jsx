@@ -33,7 +33,9 @@ const isTokenExpired = (token) => {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
     const exp = payload.exp * 1000;
-    return Date.now() >= exp;
+    // ✅ 5 seconds grace period
+    const gracePeriod = 5000;
+    return Date.now() >= (exp + gracePeriod);
   } catch (e) {
     return true;
   }

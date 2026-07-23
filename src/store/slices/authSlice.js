@@ -90,11 +90,13 @@ export const fetchCurrentUser = createAsyncThunk(
 const isTokenExpired = (token) => {
   if (!token) return true;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));  // Decode JWT
-    const exp = payload.exp * 1000;  // Convert to milliseconds
-    return Date.now() >= exp;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const exp = payload.exp * 1000;
+    // ✅ 5 seconds grace period
+    const gracePeriod = 5000;
+    return Date.now() >= (exp + gracePeriod);
   } catch (e) {
-    return true;  // Invalid token = expired
+    return true;
   }
 };
 

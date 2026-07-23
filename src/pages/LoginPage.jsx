@@ -314,7 +314,10 @@ const handleSubmit = async (e) => {
   const result = await dispatch(loginUser({ email, password }));
   // console.log("result :- ",result); 
   if (loginUser.fulfilled.match(result)) {
-    navigate("/");  // ✅ Redirect to home after login
+    // ✅ 500ms delay taaki token properly set ho jaye
+    setTimeout(() => {
+      navigate("/");
+    }, 500);
   } else {
     setError(result.payload?.message || "Invalid email or password");
   }
