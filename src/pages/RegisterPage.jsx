@@ -348,7 +348,7 @@ export default function RegisterPage() {
     setLoading(false);
   };
 
-  return (
+  return ( 
     <>
       <style>{CSS}</style>
       <div className="auth-root">
