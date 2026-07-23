@@ -28,6 +28,17 @@ import ManageShows from "./components/admin/ManageShows";
 import ManageBookings from "./components/admin/ManageBookings";
 import AdminUsers from "./components/admin/AdminUsers";
 
+const isTokenExpired = (token) => {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const exp = payload.exp * 1000;
+    return Date.now() >= exp;
+  } catch (e) {
+    return true;
+  }
+};
+
 // ✅ Periodic token check (optional)
 // In App.jsx or main.jsx
 setInterval(() => {

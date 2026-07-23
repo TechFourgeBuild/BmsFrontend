@@ -19,6 +19,9 @@ export const registerUser = createAsyncThunk(
         secretKey: userData.secretKey || null,
       });
 
+      // console.log("userData :- ",userData);
+      // console.log("secretKey :- ",userData.secretKey);
+
       // ✅ Backend sirf User return kar raha hai, token nahi
       // ✅ Hum manually token generate kar rahe hain (dummy)
       const user = response.data;

@@ -312,7 +312,7 @@ const handleSubmit = async (e) => {
   setLoading(true);
 
   const result = await dispatch(loginUser({ email, password }));
-
+  // console.log("result :- ",result); 
   if (loginUser.fulfilled.match(result)) {
     navigate("/");  // ✅ Redirect to home after login
   } else {
