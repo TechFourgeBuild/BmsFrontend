@@ -331,7 +331,8 @@ export default function RegisterPage() {
       email, 
       password, 
       phone,
-      role  // ✅ Send role to backend
+      role,  // ✅ Send role to backend
+      secretKey  
     }));
 
     if (registerUser.fulfilled.match(result)) {
