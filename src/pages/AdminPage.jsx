@@ -1,29 +1,52 @@
-import { Outlet, useNavigate, useLocation,Link } from "react-router-dom";
+import { Outlet, useNavigate, useLocation, Link } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import {
-  MdDashboard, MdMovie, MdTheaters, MdEvent,
-  MdConfirmationNumber, MdPeople, MdLogout,
-  MdClose, MdAdminPanelSettings, MdMenu,
+  MdDashboard,
+  MdMovie,
+  MdTheaters,
+  MdEvent,
+  MdConfirmationNumber,
+  MdPeople,
+  MdLogout,
+  MdClose,
+  MdAdminPanelSettings,
+  MdMenu,
   MdChevronRight,
 } from "react-icons/md";
 import { FaFire } from "react-icons/fa";
-import { logout } from "../store/slices/authSlice";
+import { logoutUser } from "../store/slices/authSlice";
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
 const NAV = [
-  { path: "/admin",          label: "Dashboard", icon: MdDashboard,       short: "Home"    },
-  { path: "/admin/movies",   label: "Movies",    icon: MdMovie,            short: "Movies"  },
-  { path: "/admin/theaters", label: "Theaters",  icon: MdTheaters,         short: "Venues"  },
-  { path: "/admin/shows",    label: "Shows",     icon: MdEvent,            short: "Shows"   },
-  { path: "/admin/bookings", label: "Bookings",  icon: MdConfirmationNumber, short: "Tickets"},
-  { path: "/admin/users",    label: "Users",     icon: MdPeople,           short: "Users"   },
+  { path: "/admin", label: "Dashboard", icon: MdDashboard, short: "Home" },
+  { path: "/admin/movies", label: "Movies", icon: MdMovie, short: "Movies" },
+  {
+    path: "/admin/theaters",
+    label: "Theaters",
+    icon: MdTheaters,
+    short: "Venues",
+  },
+  { path: "/admin/shows", label: "Shows", icon: MdEvent, short: "Shows" },
+  {
+    path: "/admin/bookings",
+    label: "Bookings",
+    icon: MdConfirmationNumber,
+    short: "Tickets",
+  },
+  { path: "/admin/users", label: "Users", icon: MdPeople, short: "Users" },
 ];
 
 // Helper: get initials
 const initials = (name) =>
-  name?.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "A";
+  name
+    ?.trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "A";
 
 // ─── CSS ──────────────────────────────────────────────────────────────────────
 // const CSS = `
@@ -940,10 +963,10 @@ const CSS = `@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const dispatch  = useDispatch();
-  const { user }  = useSelector((s) => s.auth);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const dispatch = useDispatch();
+  const { user } = useSelector((s) => s.auth);
 
   const isActive = (path) =>
     path === "/admin"
@@ -956,8 +979,8 @@ export default function AdminPage() {
     return <Navigate to="/" replace />;
   }
 
-  const handleLogout = () => {
-    dispatch(logout());
+  const handleLogout = async () => {
+    await dispatch(logoutUser());
     navigate("/");
   };
 
@@ -967,20 +990,27 @@ export default function AdminPage() {
     <>
       <style>{CSS}</style>
       <div className="al-root">
-
         {/* ── SIDEBAR ── */}
         <aside className="al-sidebar" aria-label="Admin navigation">
           <div className="al-sidebar-inner">
             <div className="al-brand">
-              <Link to="/"><div className="al-brand-logo">book<span>it</span></div></Link>
+              <Link to="/">
+                <div className="al-brand-logo">
+                  book<span>it</span>
+                </div>
+              </Link>
               <div className="al-brand-sub">Admin console</div>
             </div>
 
             <div className="al-sidebar-user">
               <div className="al-sidebar-avatar">{initials(user.name)}</div>
               <div className="al-sidebar-user-info">
-                <div className="al-sidebar-user-name">{user.name || "Admin"}</div>
-                <div className="al-sidebar-user-role">{user.role || "ADMIN"}</div>
+                <div className="al-sidebar-user-name">
+                  {user.name || "Admin"}
+                </div>
+                <div className="al-sidebar-user-role">
+                  {user.role || "ADMIN"}
+                </div>
               </div>
             </div>
 
@@ -990,8 +1020,8 @@ export default function AdminPage() {
 
             <nav className="al-nav" role="navigation">
               {NAV.map((item) => {
-                const Icon    = item.icon;
-                const active  = isActive(item.path);
+                const Icon = item.icon;
+                const active = isActive(item.path);
                 return (
                   <div
                     key={item.path}
@@ -1013,7 +1043,8 @@ export default function AdminPage() {
               <div
                 className="al-sidebar-footer-link"
                 onClick={() => navigate("/")}
-                role="button" tabIndex={0}
+                role="button"
+                tabIndex={0}
                 onKeyDown={(e) => e.key === "Enter" && navigate("/")}
               >
                 <FaFire size={16} /> View site
@@ -1021,7 +1052,8 @@ export default function AdminPage() {
               <div
                 className="al-sidebar-footer-link danger"
                 onClick={handleLogout}
-                role="button" tabIndex={0}
+                role="button"
+                tabIndex={0}
                 onKeyDown={(e) => e.key === "Enter" && handleLogout()}
               >
                 <MdLogout size={18} /> Sign out
@@ -1032,7 +1064,6 @@ export default function AdminPage() {
 
         {/* ── MAIN ── */}
         <main className="al-main">
-
           <header className="al-topbar">
             <div className="al-topbar-left">
               <div
@@ -1070,13 +1101,12 @@ export default function AdminPage() {
           <div className="al-body">
             <Outlet />
           </div>
-
         </main>
 
         {/* ── BOTTOM NAV ── */}
         <nav className="al-bottomnav" aria-label="Mobile navigation">
           {NAV.map((item) => {
-            const Icon   = item.icon;
+            const Icon = item.icon;
             const active = isActive(item.path);
             return (
               <button
@@ -1086,13 +1116,14 @@ export default function AdminPage() {
                 aria-current={active ? "page" : undefined}
                 aria-label={item.label}
               >
-                <div className="al-bn-icon"><Icon /></div>
+                <div className="al-bn-icon">
+                  <Icon />
+                </div>
                 <span className="al-bn-label">{item.short}</span>
               </button>
             );
           })}
         </nav>
-
       </div>
     </>
   );

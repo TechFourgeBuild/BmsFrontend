@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
-import { Provider } from "react-redux";
+import { Provider, useDispatch } from "react-redux";
 import { store } from "./store";
+import { bootstrapAuth } from "./store/slices/authSlice";
 
 // Pages
 import Home from "./pages/Home";
@@ -28,30 +29,6 @@ import ManageShows from "./components/admin/ManageShows";
 import ManageBookings from "./components/admin/ManageBookings";
 import AdminUsers from "./components/admin/AdminUsers";
 
-const isTokenExpired = (token) => {
-  if (!token) return true;
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const exp = payload.exp * 1000;
-    // ✅ 5 seconds grace period
-    const gracePeriod = 5000;
-    return Date.now() >= (exp + gracePeriod);
-  } catch (e) {
-    return true;
-  }
-};
-
-// ✅ Periodic token check (optional)
-// In App.jsx or main.jsx
-setInterval(() => {
-  const token = localStorage.getItem('token');
-  if (token && isTokenExpired(token)) {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-  }
-}, 60000);  // Check every minute
-
 // Components
 // import Navbar from "./components/common/Navbar";
 // import Footer from "./components/common/Footer";
@@ -61,10 +38,27 @@ import ProtectedRoute from "./components/auth/ProtectedRoute";
 import "react-toastify/dist/ReactToastify.css";
 import "./index.css";
 
+function AuthBootstrap() {
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    dispatch(bootstrapAuth());
+
+    const interval = setInterval(() => {
+      dispatch(bootstrapAuth());
+    }, 60000); // every minute, but via silent refresh — never a hard logout
+
+    return () => clearInterval(interval);
+  }, [dispatch]);
+
+  return null;
+}
+
 function App() {
   return (
     <Provider store={store}>
       <Router>
+        <AuthBootstrap />
         {/* <div className="min-h-screen flex flex-col bg-gray-100"> */}
         {/* <Navbar /> */}
         {/* <main className="flex-grow container mx-auto px-4 py-8"> */}
@@ -80,7 +74,7 @@ function App() {
           <Route path="/faq" element={<FAQ />} />
           <Route path="/privacy" element={<PrivacyPolicay />} />
           <Route path="/terms" element={<TermsAndCondition />} />
-          
+
           {/* Protected Routes (User) */}
           <Route element={<ProtectedRoute />}>
             <Route path="/bookings" element={<MyBookings />} />

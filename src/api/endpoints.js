@@ -48,6 +48,9 @@ const API = {
   // ===== CITIES =====
   CITIES: '/cities',
   CITY_BY_ID: (id) => `/cities/${id}`,
+
+  // ===== Logout =====
+  AUTH_LOGOUT: '/users/logout',
 };
 
 export default API;

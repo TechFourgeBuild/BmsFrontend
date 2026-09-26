@@ -43,7 +43,7 @@ import {
 } from "react-icons/fa";
 
 import { CSS } from "../utils/constants";
-import { logout } from "../store/slices/authSlice";
+import { logoutUser } from "../store/slices/authSlice";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -369,8 +369,8 @@ export default function Home() {
       navigate(`/movies?search=${encodeURIComponent(search.trim())}`);
   };
 
-  const handleLogout = () => {
-    dispatch(logout());
+  const handleLogout = async () => {
+    await dispatch(logoutUser());
     navigate("/");
   };
 
@@ -1061,11 +1061,19 @@ export default function Home() {
                   }}
                 >
                   {[
-                    { label: "About Us", icon: "ℹ️", redirect:"/about" },
-                    { label: "Contact", icon: "📞",  redirect:"/contact"},
-                    { label: "FAQ", icon: "❓", redirect:"/faq" },
-                    { label: "Privacy Policy", icon: "🔒", redirect:"/privacy" },
-                    { label: "Terms of Service", icon: "📜", redirect:"/terms" },
+                    { label: "About Us", icon: "ℹ️", redirect: "/about" },
+                    { label: "Contact", icon: "📞", redirect: "/contact" },
+                    { label: "FAQ", icon: "❓", redirect: "/faq" },
+                    {
+                      label: "Privacy Policy",
+                      icon: "🔒",
+                      redirect: "/privacy",
+                    },
+                    {
+                      label: "Terms of Service",
+                      icon: "📜",
+                      redirect: "/terms",
+                    },
                   ].map((link) => (
                     <button
                       key={link.label}
@@ -1091,7 +1099,7 @@ export default function Home() {
                         e.currentTarget.style.color = "#888";
                         e.currentTarget.style.transform = "translateX(0)";
                       }}
-                      onClick={()=>{
+                      onClick={() => {
                         navigate(`${link.redirect}`);
                       }}
                     >

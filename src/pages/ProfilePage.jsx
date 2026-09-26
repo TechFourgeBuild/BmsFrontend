@@ -2,29 +2,43 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  MdConfirmationNumber, MdLogout, MdEmail,
-  MdPhone, MdCalendarMonth, MdBadge,
-  MdArrowForward, MdAdminPanelSettings, MdPerson,
+  MdConfirmationNumber,
+  MdLogout,
+  MdEmail,
+  MdPhone,
+  MdCalendarMonth,
+  MdBadge,
+  MdArrowForward,
+  MdAdminPanelSettings,
+  MdPerson,
 } from "react-icons/md";
-import { logout } from "../store/slices/authSlice";
+import { logoutUser } from "../store/slices/authSlice";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmtDate = (d) => {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-IN", {
-    day: "numeric", month: "long", year: "numeric",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
 };
 
 const fmtPhone = (p) => {
   if (!p) return "—";
   const s = String(p).replace(/\D/g, "");
-  return s.length === 10 ? `+91 ${s.slice(0,5)} ${s.slice(5)}` : p;
+  return s.length === 10 ? `+91 ${s.slice(0, 5)} ${s.slice(5)}` : p;
 };
 
 const getInitials = (name) => {
   if (!name) return "?";
-  return name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 };
 
 // Deterministic avatar color from name
@@ -372,25 +386,27 @@ export default function ProfilePage() {
           <div className="pp-gate">
             <div className="pp-gate-icon">🎭</div>
             <div className="pp-gate-title">You're not signed in</div>
-            <p className="pp-gate-sub">Sign in to view your profile and booking history.</p>
-            <button className="pp-gate-btn" onClick={() => navigate("/login")}>Sign in</button>
+            <p className="pp-gate-sub">
+              Sign in to view your profile and booking history.
+            </p>
+            <button className="pp-gate-btn" onClick={() => navigate("/login")}>
+              Sign in
+            </button>
           </div>
         </div>
       </>
     );
   }
 
-  const {
-    id, name, email, phone, createdAt, role = "USER",
-  } = user;
+  const { id, name, email, phone, createdAt, role = "USER" } = user;
 
-  const initials        = getInitials(name);
+  const initials = getInitials(name);
   const [avBg, avColor] = getAvatarColor(name);
-  const isAdmin         = role?.toUpperCase() === "ADMIN";
-  const accountRef      = `#${String(id).padStart(6, "0")}`;
+  const isAdmin = role?.toUpperCase() === "ADMIN";
+  const accountRef = `#${String(id).padStart(6, "0")}`;
 
-  const handleLogout = () => {
-    dispatch(logout());
+  const handleLogout = async () => {
+    await dispatch(logoutUser());
     navigate("/");
   };
 
@@ -399,7 +415,6 @@ export default function ProfilePage() {
       <style>{CSS}</style>
       <div className="pp-root">
         <div className="pp-wrap">
-
           {/* ── AVATAR ───────────────────────────────────────────── */}
           <div className="pp-avatar-wrap pp-a1">
             <div
@@ -422,9 +437,7 @@ export default function ProfilePage() {
               <div className="pp-beam" />
             </div>
             <p className={`pp-role${isAdmin ? " pp-role-admin" : ""}`}>
-              {isAdmin
-                ? "★ Admin Production"
-                : "A User Production"}
+              {isAdmin ? "★ Admin Production" : "A User Production"}
             </p>
           </div>
 
@@ -436,7 +449,9 @@ export default function ProfilePage() {
             </div>
 
             <div className="pp-row">
-              <div className="pp-row-icon"><MdEmail size={16} /></div>
+              <div className="pp-row-icon">
+                <MdEmail size={16} />
+              </div>
               <div className="pp-row-content">
                 <div className="pp-row-label">Email</div>
                 <div className="pp-row-value">{email || "—"}</div>
@@ -444,7 +459,9 @@ export default function ProfilePage() {
             </div>
 
             <div className="pp-row">
-              <div className="pp-row-icon"><MdPhone size={16} /></div>
+              <div className="pp-row-icon">
+                <MdPhone size={16} />
+              </div>
               <div className="pp-row-content">
                 <div className="pp-row-label">Phone</div>
                 <div className="pp-row-value mono">{fmtPhone(phone)}</div>
@@ -452,7 +469,9 @@ export default function ProfilePage() {
             </div>
 
             <div className="pp-row">
-              <div className="pp-row-icon"><MdCalendarMonth size={16} /></div>
+              <div className="pp-row-icon">
+                <MdCalendarMonth size={16} />
+              </div>
               <div className="pp-row-content">
                 <div className="pp-row-label">Member since</div>
                 <div className="pp-row-value">{fmtDate(createdAt)}</div>
@@ -460,7 +479,9 @@ export default function ProfilePage() {
             </div>
 
             <div className="pp-row">
-              <div className="pp-row-icon"><MdBadge size={16} /></div>
+              <div className="pp-row-icon">
+                <MdBadge size={16} />
+              </div>
               <div className="pp-row-content">
                 <div className="pp-row-label">Account ID</div>
                 <div className="pp-row-value mono">{accountRef}</div>
@@ -469,10 +490,11 @@ export default function ProfilePage() {
 
             <div className="pp-row">
               <div className="pp-row-icon">
-                {isAdmin
-                  ? <MdAdminPanelSettings size={16} color="#8B5CF6" />
-                  : <MdPerson size={16} color="#F5A623" />
-                }
+                {isAdmin ? (
+                  <MdAdminPanelSettings size={16} color="#8B5CF6" />
+                ) : (
+                  <MdPerson size={16} color="#F5A623" />
+                )}
               </div>
               <div className="pp-row-content">
                 <div className="pp-row-label">Role</div>
@@ -488,7 +510,6 @@ export default function ProfilePage() {
 
           {/* ── ACTIONS ──────────────────────────────────────────── */}
           <div className="pp-actions pp-a4">
-
             {/* My Bookings */}
             <button
               className="pp-btn-bookings"
@@ -500,7 +521,9 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <div className="pp-btn-label">My Bookings</div>
-                  <div className="pp-btn-sub">View tickets and booking history</div>
+                  <div className="pp-btn-sub">
+                    View tickets and booking history
+                  </div>
                 </div>
               </div>
               <MdArrowForward size={18} className="pp-btn-arrow" />
@@ -518,10 +541,16 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <div className="pp-btn-label">Admin Panel</div>
-                    <div className="pp-btn-sub">Manage movies, theaters & shows</div>
+                    <div className="pp-btn-sub">
+                      Manage movies, theaters & shows
+                    </div>
                   </div>
                 </div>
-                <MdArrowForward size={18} className="pp-btn-arrow" style={{ color: "#444" }} />
+                <MdArrowForward
+                  size={18}
+                  className="pp-btn-arrow"
+                  style={{ color: "#444" }}
+                />
               </button>
             )}
 
@@ -532,16 +561,16 @@ export default function ProfilePage() {
               </div>
               Sign Out
             </button>
-
           </div>
 
           {/* ── FOOTER ───────────────────────────────────────────── */}
           <div className="pp-footer pp-a5">
             <div className="pp-footer-dot" />
-            <span>Account {accountRef} · {isAdmin ? "Admin" : "Member"}</span>
+            <span>
+              Account {accountRef} · {isAdmin ? "Admin" : "Member"}
+            </span>
             <span>Joined {fmtDate(createdAt)}</span>
           </div>
-
         </div>
       </div>
     </>
