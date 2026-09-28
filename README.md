@@ -53,7 +53,7 @@
 
 ## 1. Project Overview
 
-**BookIt Frontend** is the client-side layer of the BookIt movie booking platform. Built with **React 19** and powered by **Redux Toolkit** for global state, it communicates exclusively with the Spring Boot backend via a centralized Axios instance with JWT interceptors.
+**BookIt Frontend** is the client-side layer of the BookIt movie booking platform. Built with **React 19** and powered by **Redux Toolkit** for global state, it communicates exclusively with the Spring Boot backend via a centralized Axios instance that handles JWT access tokens, **silent access-token refresh via an httpOnly cookie**, and centralized logout.
 
 The application covers the full user journey — landing on the home page, browsing movies, selecting seats, completing a booking, and managing past bookings — alongside a complete admin interface for content and operations management.
 
@@ -64,9 +64,9 @@ The application covers the full user journey — landing on the home page, brows
 | **Movie Discovery** | Browse, search, and filter movies by genre and language |
 | **Seat Selection** | Real-time seat availability on the booking page |
 | **Booking Management** | Create, view, and cancel bookings from `MyBookings` |
-| **Authentication** | JWT-based login/register with Redux auth state |
+| **Authentication** | JWT access/refresh auth with silent session recovery on 401 and on page reload |
 | **Admin Panel** | Manage movies, theaters, shows, bookings, and users |
-| **Route Protection** | `ProtectedRoute` component with role-based access (`USER`/`ADMIN`) |
+| **Route Protection** | `ProtectedRoute` component that waits for the auth bootstrap to finish before making a redirect decision — never guesses off stale state |
 | **Error Boundaries** | `ErrorBoundary` component catches render-time failures gracefully |
 | **Toast Notifications** | `react-toastify` for non-intrusive feedback across the app |
 
@@ -121,7 +121,7 @@ BMSFRONTEND/
 ├── src/
 │   │
 │   ├── api/                         # HTTP layer
-│   │   ├── axiosConfig.js           # Axios instance, base URL, JWT interceptor
+│   │   ├── axiosConfig.js           # Axios instance, base URL, JWT + refresh interceptor
 │   │   └── endpoints.js             # Centralized API endpoint constants
 │   │
 │   ├── assets/                      # Static assets imported in JS/JSX
@@ -139,7 +139,7 @@ BMSFRONTEND/
 │   │   │   └── ManageTheaters.jsx   # Theater/screen management
 │   │   │
 │   │   ├── auth/
-│   │   │   └── ProtectedRoute.jsx   # Route guard — checks auth + role
+│   │   │   └── ProtectedRoute.jsx   # Route guard — waits for auth bootstrap, then checks role
 │   │   │
 │   │   └── common/                  # Shared UI primitives
 │   │       ├── ErrorBoundary.jsx    # React error boundary wrapper
@@ -171,7 +171,7 @@ BMSFRONTEND/
 │   │   ├── hooks/
 │   │   │   └── index.js             # Typed hooks re-export
 │   │   └── slices/                  # Redux Toolkit slices
-│   │       ├── authSlice.js         # User auth state, login/register thunks
+│   │       ├── authSlice.js         # Auth state, login/register/logout/bootstrap thunks
 │   │       ├── bookingSlice.js      # Booking creation, history, cancellation
 │   │       ├── citySlice.js         # City list for theater filtering
 │   │       ├── movieSlice.js        # Movie list, detail, search
@@ -184,7 +184,7 @@ BMSFRONTEND/
 │   ├── utils/                       # Utility functions
 │   │   └── helpers.js               # Date formatting, price formatting, etc.
 │   │
-│   ├── App.jsx                      # Root component — router + layout
+│   ├── App.jsx                      # Root component — router + layout + auth bootstrap
 │   ├── App.css                      # Global app styles
 │   ├── main.jsx                     # React DOM entry point
 │   └── index.css                    # Tailwind base styles
@@ -223,9 +223,9 @@ BMSFRONTEND/
 
 | Path | Component | Description |
 |------|-----------|-------------|
-| `/booking/:showId` | `BookingPage.jsx` | Seat selection + booking creation |
-| `/booking/confirmation` | `BookingConfirmation.jsx` | Post-booking ticket & summary |
-| `/my-bookings` | `MyBookings.jsx` | Booking history with cancel option |
+| `/booking/movie/:movieId` | `BookingPage.jsx` | Seat selection + booking creation |
+| `/booking/confirmation/:bookingId` | `BookingConfirmation.jsx` | Post-booking ticket & summary |
+| `/bookings` | `MyBookings.jsx` | Booking history with cancel option |
 | `/profile` | `ProfilePage.jsx` | View and edit user profile |
 
 ### Protected Routes — `ADMIN` role
@@ -244,7 +244,7 @@ BMSFRONTEND/
 
 ## 5. State Management
 
-The application uses **Redux Toolkit** with 8 feature slices, all wired into a single Redux store.
+The application uses **Redux Toolkit** with 9 feature slices, all wired into a single Redux store.
 
 ### Store Architecture
 
@@ -252,7 +252,7 @@ The application uses **Redux Toolkit** with 8 feature slices, all wired into a s
 store/
 └── index.js                  ← configureStore with root reducer
     └── slices/
-        ├── authSlice.js      ← auth state, JWT, user info
+        ├── authSlice.js      ← auth state, JWT, user info, session bootstrap
         ├── movieSlice.js     ← movie list, search, detail
         ├── bookingSlice.js   ← create/cancel bookings, history
         ├── showSlice.js      ← shows per movie or screen
@@ -267,7 +267,7 @@ store/
 
 | Slice | State Managed | Key Thunks / Actions |
 |-------|--------------|----------------------|
-| `authSlice` | `user`, `token`, `role`, `isAuthenticated` | `loginThunk`, `registerThunk`, `logout` |
+| `authSlice` | `user`, `token`, `authChecked`, `isLoading`, `error` | `loginUser`, `registerUser`, `logoutUser`, `bootstrapAuth`, `fetchCurrentUser`, `fetchUsers`; plain actions `tokenRefreshed`, `setUser`, `clearError` |
 | `movieSlice` | `movies[]`, `selectedMovie`, `filters` | `fetchMovies`, `fetchMovieById`, `searchMovies` |
 | `bookingSlice` | `currentBooking`, `bookings[]`, `status` | `createBooking`, `fetchUserBookings`, `cancelBooking` |
 | `showSlice` | `shows[]`, `selectedShow` | `fetchShowsByMovie`, `fetchShowsByScreen` |
@@ -276,6 +276,15 @@ store/
 | `seatSlice` | `availableSeats[]`, `selectedSeats[]` | `fetchAvailableSeats` |
 | `citySlice` | `cities[]` | `fetchCities` |
 | `uiSlice` | `isLoading`, `activeModal`, `toastQueue` | `setLoading`, `openModal`, `closeModal` |
+
+#### `authSlice` in detail — why it looks the way it does
+
+The auth slice went through a real redesign after a session-expiry bug, and its current shape reflects the fix:
+
+- **`bootstrapAuth`** — dispatched once on app mount (from `App.jsx`) and again periodically. If the stored access token looks expired, it does **not** immediately clear the session — it first attempts `POST /users/refresh-token` using the httpOnly refresh cookie, and only clears state if that also fails. This replaced an earlier version that decoded the JWT and wiped `localStorage` synchronously on module load, which never gave a refresh a chance to run.
+- **`authChecked`** — a boolean that flips `true` once `bootstrapAuth` has resolved (success or failure). `ProtectedRoute` waits for this before making any redirect decision, instead of judging a possibly-stale token itself.
+- **`logoutUser`** — a thunk, not a plain reducer. It calls `POST /users/logout` first (which clears the httpOnly refresh cookie server-side) and only then clears `token`/`user` from state and `localStorage`. A refresh cookie can't be deleted by client JS, so logout **must** go through the server.
+- **`tokenRefreshed`** — a plain (non-async) reducer, dispatched by the axios interceptor immediately after a successful silent refresh, so `state.auth.token` never drifts out of sync with what's actually in `localStorage` and what's being sent on the wire.
 
 ### Typed Hooks
 
@@ -292,58 +301,68 @@ import { useAppDispatch, useAppSelector } from '../hooks';
 
 ### Axios Configuration (`src/api/axiosConfig.js`)
 
-A single Axios instance is created with:
-- `baseURL` from `import.meta.env.VITE_API_URL`
-- **Request interceptor** — attaches `Authorization: Bearer <token>` from Redux auth state on every outgoing request
-- **Response interceptor** — handles `401` globally (clears auth state, redirects to `/login`)
+A single Axios instance is created with `withCredentials: true` (required so the httpOnly refresh cookie is actually sent) and:
+
+- **Request interceptor** — attaches `Authorization: Bearer <token>` from `localStorage` on every outgoing request.
+- **Response interceptor** — on a `401` from any endpoint other than `/refresh-token` itself, it calls `POST /users/refresh-token` exactly once per failed request (`_retry` flag prevents infinite loops), and on success: writes the new token to `localStorage`, dispatches `tokenRefreshed` so Redux stays in sync, retries the original request with the new token, and returns that result transparently to the caller. If the refresh itself fails (or `/refresh-token` returns 401), it dispatches `logoutUser` and hard-redirects to `/login`.
 
 ```js
-// Pattern (not the actual file — illustrative)
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
-
-api.interceptors.request.use((config) => {
-  const token = store.getState().auth.token;
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-api.interceptors.response.use(
+// Simplified — see src/api/axiosConfig.js for the full implementation
+axiosInstance.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      store.dispatch(logout());
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (originalRequest?.url?.includes('/refresh-token')) {
+      await store.dispatch(logoutUser());
       window.location.href = '/login';
+      return Promise.reject(error);
+    }
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        const res = await axiosInstance.post('/users/refresh-token', {}, { withCredentials: true });
+        localStorage.setItem('token', res.data.accessToken);
+        store.dispatch(tokenRefreshed(res.data.accessToken));
+        originalRequest.headers.Authorization = `Bearer ${res.data.accessToken}`;
+        return axiosInstance(originalRequest);
+      } catch (refreshError) {
+        await store.dispatch(logoutUser());
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
     }
     return Promise.reject(error);
   }
 );
 ```
 
+> **On the circular import:** this file imports the Redux `store` directly to dispatch `tokenRefreshed`/`logoutUser`, while `authSlice.js` imports this file to make its API calls — a three-way circular dependency (`store` → `authSlice` → `axiosConfig` → `store`). This is safe *only* because `store` is exclusively referenced inside the interceptor callbacks above, which run at request/response time — by then every module has finished loading. It would not be safe to reference `store` at the top level of this file.
+
 ### Endpoint Constants (`src/api/endpoints.js`)
 
 All API paths are stored as constants — no hardcoded strings scattered across slices:
 
 ```js
-// Pattern
-export const ENDPOINTS = {
-  AUTH: {
-    LOGIN:    '/users/login',
-    REGISTER: '/users/register',
-  },
-  MOVIES: {
-    ALL:    '/movies',
-    BY_ID:  (id) => `/movies/${id}`,
-    SEARCH: '/movies/search',
-  },
-  BOOKINGS: {
-    CREATE:    '/bookings',
-    BY_USER:   (userId) => `/bookings/user/${userId}`,
-    CANCEL:    (id) => `/bookings/${id}/cancel`,
-    SEATS:     (showId) => `/bookings/show/${showId}/available-seats`,
-  },
-  // ...
+const API = {
+  AUTH_REGISTER: '/users/register',
+  AUTH_LOGIN: '/users/login',
+  AUTH_LOGOUT: '/users/logout',
+  USERS: '/users',
+  USER_BY_ID: (id) => `/users/${id}`,
+  MOVIES: '/movies',
+  MOVIE_BY_ID: (id) => `/movies/${id}`,
+  BOOKINGS: '/bookings',
+  BOOKINGS_BY_USER: (userId) => `/bookings/user/${userId}`,
+  CANCEL_BOOKING: (id) => `/bookings/${id}/cancel`,
+  AVAILABLE_SEATS: (showId) => `/bookings/show/${showId}/available-seats`,
+  // ...full list in src/api/endpoints.js
 };
+export default API;
 ```
+
+`/users/refresh-token` is called directly by `axiosConfig.js` and `authSlice.js` rather than via this file, since it's only ever referenced from those two auth-internal call sites.
 
 ---
 
@@ -360,17 +379,19 @@ components/
 
 ### `ProtectedRoute.jsx`
 
-Wraps any route that requires authentication or a specific role:
-
 ```jsx
-// Behavior
-// 1. Not authenticated  → redirect to /login
-// 2. Authenticated, wrong role → redirect to /
-// 3. Authenticated, correct role → render children
-<ProtectedRoute role="ADMIN">
-  <AdminPage />
-</ProtectedRoute>
+const ProtectedRoute = ({ requiredRole }) => {
+  const { user, token, authChecked } = useSelector((s) => s.auth);
+
+  if (!authChecked) return null; // bootstrapAuth hasn't resolved yet — don't guess
+  if (!user || !token) return <Navigate to="/login" replace />;
+  if (requiredRole && user.role !== requiredRole) return <Navigate to="/" replace />;
+
+  return <Outlet />;
+};
 ```
+
+This component intentionally contains **zero** token-decoding or expiry logic of its own. It used to independently decode the JWT and redirect on every render — which meant it could log a user out even while a valid silent refresh was in flight elsewhere. Token-freshness is decided in exactly one place (`bootstrapAuth`); this component just waits for that decision and trusts it.
 
 ### `ErrorBoundary.jsx`
 
@@ -395,32 +416,72 @@ Reusable centered spinner, driven by `uiSlice.isLoading`. Used across async data
 
 ## 8. Authentication & Route Protection
 
-### Auth State Flow
+### Auth State Flow — Login
 
 ```
 User submits login form
-  → LoginPage dispatches loginThunk(credentials)
-  → Axios POST /api/users/login
-  → Response: { token, role, name }
-  → authSlice stores token + user info
-  → token persisted to localStorage
-  → ProtectedRoute reads isAuthenticated from store
+  → LoginPage dispatches loginUser(credentials)
+  → Axios POST /api/users/login (withCredentials: true)
+  → Response body: { token, user }
+    (backend also sets the refresh token as an httpOnly cookie —
+     it never appears in the JSON body or in localStorage)
+  → authSlice stores token + user, sets authChecked = true
+  → token + user persisted to localStorage
+  → ProtectedRoute reads user/token/authChecked from store
   → User redirected to intended page
 ```
 
+### Auth State Flow — App Load / Reload
+
+```
+App.jsx mounts
+  → dispatches bootstrapAuth() once, and again every 60s as a background check
+  → bootstrapAuth reads the stored access token
+      → not expired: leaves it as-is, authChecked = true
+      → looks expired: attempts POST /users/refresh-token using the
+        httpOnly cookie BEFORE giving up
+          → success: new token written to localStorage + Redux, authChecked = true
+          → failure: calls /users/logout (clears the cookie server-side too),
+            clears local state, authChecked = true
+  → ProtectedRoute waits for authChecked before rendering or redirecting
+```
+
+This two-path design (login vs. reload/background) exists because of a real bug: an earlier version decided "is the user logged in" synchronously at module load, before any refresh attempt could run, which logged users out on every reload once the short-lived access token expired — even though a perfectly valid refresh cookie was sitting right there.
+
+### Auth State Flow — Mid-Session Token Expiry
+
+```
+Any authenticated API call returns 401 (access token expired)
+  → axios response interceptor catches it
+  → POST /users/refresh-token (httpOnly cookie sent automatically)
+      → success: new token saved, original request retried transparently —
+        the calling component never sees the 401 at all
+      → failure: logoutUser() dispatched, redirected to /login
+```
+
+### Auth State Flow — Logout
+
+```
+User clicks "Sign out" (Home navbar / AdminPage sidebar / ProfilePage)
+  → dispatch(logoutUser())
+  → POST /api/users/logout → server clears the httpOnly refresh cookie
+  → only then: token/user cleared from Redux + localStorage
+```
+
+> All three logout entry points must dispatch the same `logoutUser` thunk. A plain synchronous `logout` reducer that only clears `localStorage` was removed from this slice on purpose — since the refresh cookie is `httpOnly`, client JS can never delete it directly, so any logout path that skips the server call leaves a live refresh cookie behind.
+
 ### Token Persistence
 
-The JWT token is stored in `localStorage` so it survives page refreshes. On app initialization (`main.jsx` / `App.jsx`), the store is hydrated from `localStorage` if a valid token exists.
+The JWT **access token** and user object are stored in `localStorage` so the UI can render immediately on reload without waiting for a network round trip; the actual source of truth for whether the session is still valid is the httpOnly refresh cookie plus `bootstrapAuth`'s check, not the mere presence of a `localStorage` value.
 
 ### Route Guard Logic (`ProtectedRoute.jsx`)
 
 ```
 Request hits protected route
-  → ProtectedRoute checks store.auth.isAuthenticated
-      → false: <Navigate to="/login" replace />
-  → Checks store.auth.role === requiredRole (if specified)
-      → mismatch: <Navigate to="/" replace />
-  → Renders children
+  → authChecked === false → render nothing (bootstrap still running)
+  → authChecked === true, no user/token → <Navigate to="/login" replace />
+  → authChecked === true, user.role !== requiredRole → <Navigate to="/" replace />
+  → otherwise → <Outlet />
 ```
 
 ---
@@ -436,8 +497,8 @@ Request hits protected route
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/BMSProject.git
-cd BMSProject/UI   # or wherever the frontend lives
+git clone https://github.com/TechFourgeBuild/BmsFrontend.git
+cd BmsFrontend
 
 # Install dependencies
 pnpm install
@@ -480,7 +541,7 @@ VITE_API_URL=http://localhost:8080/api
 VITE_ADMIN_SECRET_KEY=your_admin_secret
 ```
 
-> All Vite environment variables must be prefixed with `VITE_` to be exposed to the client bundle.
+> All Vite environment variables must be prefixed with `VITE_` to be exposed to the client bundle — that's not optional, it's the whole point of the prefix.
 
 ### Production `.env` (Vercel)
 
@@ -489,6 +550,8 @@ Set these in your Vercel project dashboard under **Settings → Environment Vari
 | Variable | Value |
 |----------|-------|
 | `VITE_API_URL` | `https://your-backend.onrender.com/api` |
+
+> **Gotcha we actually hit:** Vercel offers two types for env vars — **Secret** (write-only, never readable after saving, meant for values that must stay server-side) and **Config/Plain** (readable, meant for values baked into the client build). `VITE_API_URL` **must** be set as Config, not Secret. Setting it as Secret meant the value never made it into the built bundle, so the deployed app silently fell back to the code's hardcoded `http://localhost:8080/api` default — every request from production failed as a network error, which surfaced misleadingly as `"Invalid email or password"` on login because the frontend's error handler assumes a failed request without a server response means bad credentials. If login fails in production with correct credentials, check this first. Also remember: Vite bakes env vars in at **build time**, so changing this value requires a fresh deploy (not just a save) to take effect.
 
 ---
 
@@ -529,6 +592,16 @@ Or connect your GitHub repo to Vercel for automatic deployments on every push to
 | Output Directory | `dist` |
 | Install Command | `pnpm install` |
 
+### Cross-Origin Auth Checklist (Vercel frontend ↔ Render backend)
+
+Deploying frontend and backend to different domains surfaces cookie behavior that doesn't show up in local development (where `localhost:5173` and `localhost:8080` are treated as same-site despite the different ports). Before trusting a production deploy:
+
+- [ ] Backend's refresh cookie is set with `SameSite=None; Secure=true` (not `Strict`, which never leaves same-site)
+- [ ] Backend's CORS config lists the exact deployed Vercel origin, with `allowCredentials(true)`
+- [ ] `VITE_API_URL` is set as **Config**, not **Secret**, in Vercel's env var settings (see [Section 10](#10-environment-variables))
+- [ ] A fresh deploy has run *after* any env var change — Vite bakes these in at build time
+- [ ] Verified by inspecting the actual `Set-Cookie` response header (or the request's dedicated Cookies panel in DevTools) rather than trusting the frontend origin's Storage tab, which will never show a cookie set by a different origin
+
 ---
 
 <div align="center">
@@ -536,5 +609,7 @@ Or connect your GitHub repo to Vercel for automatic deployments on every push to
 **© 2026 BookIt. All rights reserved.**
 
 *Built with React 19 · Redux Toolkit · Tailwind CSS · Vite*
+
+**Repo:** [github.com/TechFourgeBuild/BmsFrontend](https://github.com/TechFourgeBuild/BmsFrontend.git)
 
 </div>
