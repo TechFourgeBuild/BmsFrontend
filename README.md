@@ -53,7 +53,7 @@
 
 ## 1. Project Overview
 
-**BookIt Frontend** is the client-side layer of the BookIt movie booking platform. Built with **React 19** and powered by **Redux Toolkit** for global state, it communicates exclusively with the Spring Boot backend via a centralized Axios instance that handles JWT access tokens, **silent access-token refresh via an httpOnly cookie**, and centralized logout.
+**BookIt Frontend** is the client-side layer of the BookIt movie booking platform. Built with **React 19** and powered by **Redux Toolkit** for global state, it communicates exclusively with the Spring Boot backend via a centralized Axios instance that handles JWT access tokens, **silent access-token refresh via an httpOnly cookie**, and centralized logout. In production, all API calls go through a **same-origin proxy** on the frontend's own domain (see [Section 11](#11-deployment)), so the refresh cookie is a first-party cookie in every browser.
 
 The application covers the full user journey — landing on the home page, browsing movies, selecting seats, completing a booking, and managing past bookings — alongside a complete admin interface for content and operations management.
 
@@ -64,7 +64,7 @@ The application covers the full user journey — landing on the home page, brows
 | **Movie Discovery** | Browse, search, and filter movies by genre and language |
 | **Seat Selection** | Real-time seat availability on the booking page |
 | **Booking Management** | Create, view, and cancel bookings from `MyBookings` |
-| **Authentication** | JWT access/refresh auth with silent session recovery on 401 and on page reload |
+| **Authentication** | JWT access/refresh auth with silent session recovery on 401 and on page reload; refresh cookie stays first-party via a same-origin API proxy |
 | **Admin Panel** | Manage movies, theaters, shows, bookings, and users |
 | **Route Protection** | `ProtectedRoute` component that waits for the auth bootstrap to finish before making a redirect decision — never guesses off stale state |
 | **Error Boundaries** | `ErrorBoundary` component catches render-time failures gracefully |
@@ -195,7 +195,7 @@ BMSFRONTEND/
 ├── index.html                       # Vite HTML entry point
 ├── package.json
 ├── pnpm-lock.yaml
-├── vercel.json                      # Vercel deployment config (SPA rewrites)
+├── vercel.json                      # Vercel config: /api proxy rewrite to backend + SPA rewrite
 └── vite.config.js                   # Vite + React + Tailwind plugin config
 ```
 
@@ -301,7 +301,7 @@ import { useAppDispatch, useAppSelector } from '../hooks';
 
 ### Axios Configuration (`src/api/axiosConfig.js`)
 
-A single Axios instance is created with `withCredentials: true` (required so the httpOnly refresh cookie is actually sent) and:
+A single Axios instance is created with `withCredentials: true` (so the httpOnly refresh cookie is sent) and a `baseURL` read from `VITE_API_URL`. In production that value is the **relative path `/api`**, so requests go to the frontend's own origin and Vercel proxies them to the backend (see [Section 11](#11-deployment)). It also has:
 
 - **Request interceptor** — attaches `Authorization: Bearer <token>` from `localStorage` on every outgoing request.
 - **Response interceptor** — on a `401` from any endpoint other than `/refresh-token` itself, it calls `POST /users/refresh-token` exactly once per failed request (`_retry` flag prevents infinite loops), and on success: writes the new token to `localStorage`, dispatches `tokenRefreshed` so Redux stays in sync, retries the original request with the new token, and returns that result transparently to the caller. If the refresh itself fails (or `/refresh-token` returns 401), it dispatches `logoutUser` and hard-redirects to `/login`.
@@ -470,6 +470,16 @@ User clicks "Sign out" (Home navbar / AdminPage sidebar / ProfilePage)
 
 > All three logout entry points must dispatch the same `logoutUser` thunk. A plain synchronous `logout` reducer that only clears `localStorage` was removed from this slice on purpose — since the refresh cookie is `httpOnly`, client JS can never delete it directly, so any logout path that skips the server call leaves a live refresh cookie behind.
 
+### Why the API is proxied through the frontend's origin
+
+The refresh token lives in an httpOnly cookie. With the frontend on `vercel.app` and the backend on `onrender.com`, that cookie was a **third-party cookie** from the browser's point of view, even with `SameSite=None; Secure` set correctly. Chrome, Edge and Firefox allowed it, but **Brave** (with its default "Block third-party cookies" Shields setting) logged users out a couple of hours after login, right when the access token expired and the refresh cookie was needed.
+
+The fix is to make the cookie first-party: the browser now only talks to `bms-frontend-snowy.vercel.app`, and a Vercel rewrite forwards `/api/*` to the backend server-side. The `Set-Cookie` response therefore comes from the frontend's own origin.
+
+**Verified result:** after the change, Brave, Chrome, Edge and Firefox all stayed logged in after 7.5 hours idle. Login requests show `Sec-Fetch-Site: same-origin`, and the cookie is stored under the frontend's domain.
+
+> This is the same class of problem that Safari's Intelligent Tracking Prevention causes, so the same-origin setup also protects Safari users.
+
 ### Token Persistence
 
 The JWT **access token** and user object are stored in `localStorage` so the UI can render immediately on reload without waiting for a network round trip; the actual source of truth for whether the session is still valid is the httpOnly refresh cookie plus `bootstrapAuth`'s check, not the mere presence of a `localStorage` value.
@@ -534,11 +544,30 @@ pnpm lint
 Create a `.env` file in the frontend root (already gitignored):
 
 ```bash
-# Backend API base URL — include /api suffix
+# Backend API base URL — include /api suffix.
+# Option A (direct): call the local backend directly. Works locally because
+# localhost ports are treated as same-site.
 VITE_API_URL=http://localhost:8080/api
+
+# Option B (same-origin, mirrors production): use the relative path and add a
+# dev proxy in vite.config.js (see below) so /api is forwarded to the backend.
+# VITE_API_URL=/api
 
 # Optional: admin registration secret if implemented
 VITE_ADMIN_SECRET_KEY=your_admin_secret
+```
+
+If you use Option B, add this to `vite.config.js`, otherwise `/api` would resolve to the Vite dev server itself and return 404:
+
+```js
+export default defineConfig({
+  // ...existing plugins
+  server: {
+    proxy: {
+      '/api': { target: 'http://localhost:8080', changeOrigin: true },
+    },
+  },
+});
 ```
 
 > All Vite environment variables must be prefixed with `VITE_` to be exposed to the client bundle — that's not optional, it's the whole point of the prefix.
@@ -549,9 +578,9 @@ Set these in your Vercel project dashboard under **Settings → Environment Vari
 
 | Variable | Value |
 |----------|-------|
-| `VITE_API_URL` | `https://your-backend.onrender.com/api` |
+| `VITE_API_URL` | `/api` (relative — requests are proxied to the backend by the `vercel.json` rewrite) |
 
-> **Gotcha we actually hit:** Vercel offers two types for env vars — **Secret** (write-only, never readable after saving, meant for values that must stay server-side) and **Config/Plain** (readable, meant for values baked into the client build). `VITE_API_URL` **must** be set as Config, not Secret. Setting it as Secret meant the value never made it into the built bundle, so the deployed app silently fell back to the code's hardcoded `http://localhost:8080/api` default — every request from production failed as a network error, which surfaced misleadingly as `"Invalid email or password"` on login because the frontend's error handler assumes a failed request without a server response means bad credentials. If login fails in production with correct credentials, check this first. Also remember: Vite bakes env vars in at **build time**, so changing this value requires a fresh deploy (not just a save) to take effect.
+> **Gotcha we actually hit:** Vercel offers two types for env vars — **Secret** (write-only, never readable after saving, meant for values that must stay server-side) and **Config/Plain** (readable, meant for values baked into the client build). `VITE_API_URL` **must** be set as Config, not Secret. Setting it as Secret meant the value never made it into the built bundle, so the deployed app silently fell back to the code's hardcoded `http://localhost:8080/api` default — every request from production failed as a network error, which surfaced misleadingly as `"Invalid email or password"` on login because the frontend's error handler assumes a failed request without a server response means bad credentials. If login fails in production with correct credentials, check this first. Since the value is now the relative `/api`, a wrong or missing value would send requests to Vercel itself instead of the backend, so a `404` or an HTML response on `/api/...` calls also points here. Also remember: Vite bakes env vars in at **build time**, so changing this value requires a fresh deploy (not just a save) to take effect.
 
 ---
 
@@ -559,17 +588,27 @@ Set these in your Vercel project dashboard under **Settings → Environment Vari
 
 The frontend is deployed to **Vercel** (`vercel.json` is present in the root).
 
-### `vercel.json` — SPA Rewrite Rule
+### `vercel.json` — API Proxy + SPA Rewrite
 
-For React Router to work correctly on Vercel, all routes must be rewritten to `index.html`:
+Two rewrites, **in this order**:
 
 ```json
 {
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "dist",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": "vite",
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://bms-backend-api-e071.onrender.com/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
 ```
+
+- **`/api/:path*` → backend:** Vercel forwards API calls to the Render backend server-side. The browser only ever sees the frontend's own origin, so the refresh cookie is first-party.
+- **`/(.*)` → `/index.html`:** required so React Router works on direct URL loads and refreshes.
+- **Order matters.** If the catch-all comes first, it swallows `/api/*` and every API call returns `index.html` instead of JSON.
 
 ### Deploy Steps
 
@@ -592,15 +631,24 @@ Or connect your GitHub repo to Vercel for automatic deployments on every push to
 | Output Directory | `dist` |
 | Install Command | `pnpm install` |
 
-### Cross-Origin Auth Checklist (Vercel frontend ↔ Render backend)
+### Same-Origin Auth Checklist (Vercel frontend ↔ Render backend)
 
-Deploying frontend and backend to different domains surfaces cookie behavior that doesn't show up in local development (where `localhost:5173` and `localhost:8080` are treated as same-site despite the different ports). Before trusting a production deploy:
+Before trusting a production deploy:
 
-- [ ] Backend's refresh cookie is set with `SameSite=None; Secure=true` (not `Strict`, which never leaves same-site)
-- [ ] Backend's CORS config lists the exact deployed Vercel origin, with `allowCredentials(true)`
-- [ ] `VITE_API_URL` is set as **Config**, not **Secret**, in Vercel's env var settings (see [Section 10](#10-environment-variables))
-- [ ] A fresh deploy has run *after* any env var change — Vite bakes these in at build time
-- [ ] Verified by inspecting the actual `Set-Cookie` response header (or the request's dedicated Cookies panel in DevTools) rather than trusting the frontend origin's Storage tab, which will never show a cookie set by a different origin
+- [ ] `vercel.json` has the `/api/:path*` rewrite **before** the SPA catch-all
+- [ ] `VITE_API_URL` is `/api`, set as **Config**, not **Secret**, in Vercel's env var settings (see [Section 10](#10-environment-variables))
+- [ ] A fresh deploy has run *after* any env var change (build cache off) — Vite bakes these in at build time
+- [ ] In DevTools → Network, the login request URL is `https://<your-frontend>.vercel.app/api/users/login` (not the backend's domain), and `Sec-Fetch-Site` is `same-origin`
+- [ ] The request's Cookies tab shows `refreshToken` with the **frontend's** domain, and it also appears under Application → Cookies for that domain
+- [ ] Backend CORS config still lists the exact deployed Vercel origin with `allowCredentials(true)`. This is still needed: Vercel forwards the browser's `Origin` header to the backend, so the backend still evaluates each request as cross-origin
+- [ ] Backend cookie is `Secure=true`. It is currently `SameSite=None`, which works fine here; `Lax` would also be enough now that the cookie is first-party
+- [ ] Long-idle test: log in, close the browser, and return several hours later on Brave (default Shields) and at least one other browser. Both should still be logged in
+
+### Known Trade-offs of the Proxy
+
+- **Cold starts:** if the backend is on a free tier that sleeps when idle, the first request after a long idle period can take a minute or more, and the proxy may time out (`504`) before the backend responds. A keep-alive ping or a paid instance avoids this.
+- **One-time logout on migration:** the old refresh cookie was stored under the backend's domain and is never sent to the new same-origin path, so existing sessions are logged out once. The app handles this correctly by falling back to `/login`.
+- **Local development:** with `VITE_API_URL=http://localhost:8080/api` there is no proxy, which is fine locally. Use the Vite dev proxy from [Section 10](#10-environment-variables) if you want local dev to mirror production.
 
 ---
 
